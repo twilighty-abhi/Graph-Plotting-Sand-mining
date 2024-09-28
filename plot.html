@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSV Coordinate Plotter (DMS to Decimal)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY"></script>
+  <style>
+    #map {
+      height: 400px;
+      width: 100%;
+    }
+    .container {
+      margin: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Upload CSV and Plot Coordinates (DMS to Decimal)</h1>
+    <input type="file" id="csvFileInput" accept=".csv" />
+    <button onclick="processCSV()">Plot Coordinates</button>
+    <br><br>
+    <div id="map"></div>
+  </div>
+
+  <script>
+    let coordinates = [];
+
+    // Function to process the CSV file
+    function processCSV() {
+      const fileInput = document.getElementById('csvFileInput');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        alert('Please upload a CSV file!');
+        return;
+      }
+      
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          coordinates = results.data.map(row => {
+            const latDMS = row['latitude'];  // N 15° 0' 36.0"
+            const lngDMS = row['longitude']; // E 25° 4' 12.0"
+            return {
+              latitude: convertDMSToDecimal(latDMS),
+              longitude: convertDMSToDecimal(lngDMS)
+            };
+          });
+          initMap();
+        },
+        error: function(error) {
+          alert('Error parsing CSV file: ' + error.message);
+        }
+      });
+    }
+
+    // Function to convert DMS format to Decimal Degrees
+    function convertDMSToDecimal(dms) {
+      let parts = dms.match(/([NSEW])\s(\d+)[°]\s(\d+)[']\s(\d+\.?\d*)["]/);
+      
+      if (!parts) {
+        alert('Invalid DMS format!');
+        return 0;
+      }
+
+      let direction = parts[1]; // N, S, E, W
+      let degrees = parseFloat(parts[2]);
+      let minutes = parseFloat(parts[3]);
+      let seconds = parseFloat(parts[4]);
+
+      // Convert to decimal degrees
+      let decimalDegrees = degrees + (minutes / 60) + (seconds / 3600);
+      
+      // If direction is South or West, make the decimal degrees negative
+      if (direction === 'S' || direction === 'W') {
+        decimalDegrees = -decimalDegrees;
+      }
+
+      return decimalDegrees;
+    }
+
+    // Function to initialize and plot markers on the map
+    function initMap() {
+      if (coordinates.length === 0) {
+        alert('No coordinates found in CSV!');
+        return;
+      }
+
+      // Center the map around the first coordinate
+      const mapOptions = {
+        zoom: 8,
+        center: new google.maps.LatLng(coordinates[0].latitude, coordinates[0].longitude)
+      };
+
+      // Create the map
+      const map = new google.maps.Map(document.getElementById('map'), mapOptions);
+
+      // Loop through the coordinates and place a marker on the map for each
+      coordinates.forEach(coord => {
+        new google.maps.Marker({
+          position: new google.maps.LatLng(coord.latitude, coord.longitude),
+          map: map
+        });
+      });
+    }
+  </script>
+</body>
+</html>
