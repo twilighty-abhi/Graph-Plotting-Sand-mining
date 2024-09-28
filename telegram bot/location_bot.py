@@ -9,7 +9,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Your bot token from BotFather
-TOKEN = "7572982062:AAE9S_rrNyntTOtq0piXPez7JoFodjsis8Q"
+TOKEN = "Meow Meow Meoww"
 
 # Start Command: Shows welcome message and fetch location option
 async def start(update: Update, context):
