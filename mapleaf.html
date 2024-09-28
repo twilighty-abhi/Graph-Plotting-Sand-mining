@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet Polygon Example</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <style>
+        #map {
+            height: 400px;
+            width: 100%;
+            margin-top: 20px;
+        }
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .input-container {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Create a Polygon with Leaflet</h1>
+    
+    <!-- Coordinate Input Form -->
+    <form id="coordinateForm">
+        <div class="input-container">
+            <label>Coordinate 1 (Lat, Lng): </label>
+            <input type="number" id="lat1" placeholder="Latitude 1" step="any" required>
+            <input type="number" id="lng1" placeholder="Longitude 1" step="any" required>
+        </div>
+        <div class="input-container">
+            <label>Coordinate 2 (Lat, Lng): </label>
+            <input type="number" id="lat2" placeholder="Latitude 2" step="any" required>
+            <input type="number" id="lng2" placeholder="Longitude 2" step="any" required>
+        </div>
+        <div class="input-container">
+            <label>Coordinate 3 (Lat, Lng): </label>
+            <input type="number" id="lat3" placeholder="Latitude 3" step="any" required>
+            <input type="number" id="lng3" placeholder="Longitude 3" step="any" required>
+        </div>
+        <div class="input-container">
+            <label>Coordinate 4 (Lat, Lng): </label>
+            <input type="number" id="lat4" placeholder="Latitude 4" step="any" required>
+            <input type="number" id="lng4" placeholder="Longitude 4" step="any" required>
+        </div>
+        <button type="submit">Draw Polygon</button>
+    </form>
+
+    <!-- Div to display the map -->
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+    <script>
+        // Initialize the map and set the default view
+        var map = L.map('map').setView([0, 0], 2); // Set default to (0, 0) and zoom level 2
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // Form submit event listener
+        document.getElementById('coordinateForm').addEventListener('submit', function (e) {
+            e.preventDefault(); // Prevent page refresh on form submission
+
+            // Get input values from the form
+            var lat1 = parseFloat(document.getElementById('lat1').value);
+            var lng1 = parseFloat(document.getElementById('lng1').value);
+            var lat2 = parseFloat(document.getElementById('lat2').value);
+            var lng2 = parseFloat(document.getElementById('lng2').value);
+            var lat3 = parseFloat(document.getElementById('lat3').value);
+            var lng3 = parseFloat(document.getElementById('lng3').value);
+            var lat4 = parseFloat(document.getElementById('lat4').value);
+            var lng4 = parseFloat(document.getElementById('lng4').value);
+
+            // Coordinates for the polygon
+            var coordinates = [
+                [lat1, lng1],
+                [lat2, lng2],
+                [lat3, lng3],
+                [lat4, lng4]
+            ];
+
+            // Clear any existing layers (polygons)
+            map.eachLayer(function (layer) {
+                if (layer instanceof L.Polygon) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            // Fit the map view to the polygon bounds
+            map.fitBounds(coordinates);
+
+            // Draw the polygon
+            var polygon = L.polygon(coordinates, { color: 'blue' }).addTo(map);
+        });
+    </script>
+
+</body>
+</html>
