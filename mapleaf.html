@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leaflet Multiple Polygons Example</title>
+    <title>Leaflet Polygons with Automatic Coordinate Detection</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
     <style>
         #map {
-            height: 600px;
+            height: 400px;
             width: 100%;
             margin-top: 20px;
         }
@@ -17,11 +17,26 @@
         .input-container {
             margin-bottom: 10px;
         }
+        .legend {
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+        .legend-item {
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
 
-    <h1>Create Multiple Polygons with Leaflet</h1>
+    <h1>Polygons with Automatic DMS or Decimal Input</h1>
     
     <!-- Step 1: Choose number of polygons -->
     <form id="polygonCountForm">
@@ -54,6 +69,7 @@
 
         // Colors for the polygons
         const colors = ['blue', 'green', 'red', 'orange', 'purple'];
+        const polygons = []; // To store polygon objects for legends
 
         // Handle the polygon count form submission
         document.getElementById('polygonCountForm').addEventListener('submit', function (e) {
@@ -73,31 +89,58 @@
             coordinateSetsDiv.innerHTML = ''; // Clear previous inputs
 
             for (let i = 1; i <= polygonCount; i++) {
-                // Create a coordinate set input for each polygon
-                let coordinateSetHTML = `
+                let polygonHTML = `
                     <h3>Polygon ${i}:</h3>
+                    <label for="points${i}">How many coordinates? (min 3): </label>
+                    <input type="number" id="points${i}" min="3" required value="4">
+                    <div id="coordinateSet${i}"></div>
+                    <button type="button" onclick="generateCoordinateFields(${i})">Generate Coordinates</button>
+                    <hr/>
+                `;
+                coordinateSetsDiv.insertAdjacentHTML('beforeend', polygonHTML);
+            }
+        }
+
+        // Generate fields to accept either DMS or Decimal Degrees
+        function generateCoordinateFields(polygonId) {
+            var points = document.getElementById(`points${polygonId}`).value;
+            var coordinateSetDiv = document.getElementById(`coordinateSet${polygonId}`);
+            coordinateSetDiv.innerHTML = ''; // Clear previous fields
+
+            for (let j = 1; j <= points; j++) {
+                let coordinateFields = `
                     <div class="input-container">
-                        <label>Coordinate 1 (Lat, Lng): </label>
-                        <input type="number" id="lat${i}_1" placeholder="Latitude 1" step="any" required>
-                        <input type="number" id="lng${i}_1" placeholder="Longitude 1" step="any" required>
-                    </div>
-                    <div class="input-container">
-                        <label>Coordinate 2 (Lat, Lng): </label>
-                        <input type="number" id="lat${i}_2" placeholder="Latitude 2" step="any" required>
-                        <input type="number" id="lng${i}_2" placeholder="Longitude 2" step="any" required>
-                    </div>
-                    <div class="input-container">
-                        <label>Coordinate 3 (Lat, Lng): </label>
-                        <input type="number" id="lat${i}_3" placeholder="Latitude 3" step="any" required>
-                        <input type="number" id="lng${i}_3" placeholder="Longitude 3" step="any" required>
-                    </div>
-                    <div class="input-container">
-                        <label>Coordinate 4 (Lat, Lng): </label>
-                        <input type="number" id="lat${i}_4" placeholder="Latitude 4" step="any" required>
-                        <input type="number" id="lng${i}_4" placeholder="Longitude 4" step="any" required>
+                        <label>Coordinate ${j} (Lat, Lng): </label>
+                        Lat: <input type="text" id="lat${polygonId}_${j}" placeholder="e.g. 40 26 46 N or 40.446">
+                        Lng: <input type="text" id="lng${polygonId}_${j}" placeholder="e.g. 79 58 56 W or -79.982">
                     </div>
                 `;
-                coordinateSetsDiv.insertAdjacentHTML('beforeend', coordinateSetHTML);
+                coordinateSetDiv.insertAdjacentHTML('beforeend', coordinateFields);
+            }
+        }
+
+        // Helper function to detect DMS format and convert to Decimal Degrees
+        function convertToDecimal(input) {
+            // Check if the input contains spaces (indicating DMS format)
+            let parts = input.trim().split(/\s+/);
+            if (parts.length === 1) {
+                // Assume it's already in Decimal Degrees
+                return parseFloat(input);
+            } else if (parts.length === 3 || parts.length === 4) {
+                // Convert from DMS to Decimal Degrees
+                let degrees = parseFloat(parts[0]);
+                let minutes = parseFloat(parts[1]);
+                let seconds = parseFloat(parts[2]);
+                let direction = parts.length === 4 ? parts[3].toUpperCase() : null;
+
+                let decimal = degrees + (minutes / 60) + (seconds / 3600);
+                if (direction === 'S' || direction === 'W') {
+                    decimal = decimal * -1;
+                }
+                return decimal;
+            } else {
+                alert("Invalid coordinate format. Please use either DMS or Decimal Degrees.");
+                return null;
             }
         }
 
@@ -108,37 +151,39 @@
             // Get the number of polygons
             var polygonCount = parseInt(document.getElementById('polygonCount').value);
 
-            // Clear any existing layers (polygons)
+            // Clear existing layers (polygons) and reset legend
             map.eachLayer(function (layer) {
                 if (layer instanceof L.Polygon) {
                     map.removeLayer(layer);
                 }
             });
+            polygons.length = 0;
 
             // Loop through each polygon set and draw them
             for (let i = 1; i <= polygonCount; i++) {
-                var lat1 = parseFloat(document.getElementById(`lat${i}_1`).value);
-                var lng1 = parseFloat(document.getElementById(`lng${i}_1`).value);
-                var lat2 = parseFloat(document.getElementById(`lat${i}_2`).value);
-                var lng2 = parseFloat(document.getElementById(`lng${i}_2`).value);
-                var lat3 = parseFloat(document.getElementById(`lat${i}_3`).value);
-                var lng3 = parseFloat(document.getElementById(`lng${i}_3`).value);
-                var lat4 = parseFloat(document.getElementById(`lat${i}_4`).value);
-                var lng4 = parseFloat(document.getElementById(`lng${i}_4`).value);
+                var points = parseInt(document.getElementById(`points${i}`).value);
+                var coordinates = [];
 
-                // Coordinates for the current polygon
-                var coordinates = [
-                    [lat1, lng1],
-                    [lat2, lng2],
-                    [lat3, lng3],
-                    [lat4, lng4]
-                ];
+                for (let j = 1; j <= points; j++) {
+                    var latInput = document.getElementById(`lat${i}_${j}`).value;
+                    var lngInput = document.getElementById(`lng${i}_${j}`).value;
+
+                    // Convert to Decimal Degrees if necessary
+                    var lat = convertToDecimal(latInput);
+                    var lng = convertToDecimal(lngInput);
+
+                    // Ensure valid coordinates before adding
+                    if (lat !== null && lng !== null) {
+                        coordinates.push([lat, lng]);
+                    }
+                }
 
                 // Draw the polygon with a unique color
-                L.polygon(coordinates, { color: colors[i - 1] }).addTo(map);
+                var polygon = L.polygon(coordinates, { color: colors[i - 1] }).addTo(map);
+                polygons.push({ polygon: polygon, color: colors[i - 1], name: `Polygon ${i}` });
             }
 
-            // Zoom to fit the bounds of all polygons
+            // Fit map to bounds of all polygons
             var bounds = [];
             map.eachLayer(function (layer) {
                 if (layer instanceof L.Polygon) {
@@ -146,7 +191,30 @@
                 }
             });
             map.fitBounds(bounds);
+
+            // Add the legend to the map
+            addLegend(polygons);
         });
+
+        // Function to add legend to the map
+        function addLegend(polygons) {
+            var legend = L.control({ position: 'bottomright' });
+
+            legend.onAdd = function () {
+                var div = L.DomUtil.create('div', 'legend');
+                polygons.forEach(function (item) {
+                    div.innerHTML += `
+                        <div class="legend-item">
+                            <span class="legend-color" style="background-color:${item.color};"></span>
+                            ${item.name}
+                        </div>
+                    `;
+                });
+                return div;
+            };
+
+            legend.addTo(map);
+        }
     </script>
 
 </body>
