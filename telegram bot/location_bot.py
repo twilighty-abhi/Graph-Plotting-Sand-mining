@@ -57,8 +57,8 @@ async def location_callback(update: Update, context: CallbackContext):
     await query.answer()  # Acknowledge the callback
 
     if query.data == 'manual_input':
-        await query.edit_message_text("Please enter your longitude (as a number):")
-        context.user_data['state'] = 'waiting_for_coordinates'
+        await query.edit_message_text("Please enter your latitude (as a number):")
+        context.user_data['state'] = 'waiting_for_latitude'
     elif query.data == 'share_location':
         await query.edit_message_text("Please share your location using the Telegram location-sharing feature.")
 
@@ -67,27 +67,28 @@ async def receive_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE
     state = context.user_data.get('state')
     
     try:
-        if state == 'waiting_for_coordinates':
+        if state == 'waiting_for_latitude':
+            # Process Latitude Input
+            context.user_data['latitude'] = float(update.message.text)
+            logger.info(f"Received Latitude: {context.user_data['latitude']}")  # Log latitude
+            await update.message.reply_text("Thank you! Now, please enter your longitude (as a number):")
+            context.user_data['state'] = 'waiting_for_longitude'  # Transition to waiting for longitude
+            
+        elif state == 'waiting_for_longitude':
             # Process Longitude Input
-            if 'longitude' not in context.user_data:
-                context.user_data['longitude'] = float(update.message.text)
-                logger.info(f"Received Longitude: {context.user_data['longitude']}")  # Log longitude
-                await update.message.reply_text("Thank you! Now, please enter your latitude (as a number):")
-            else:
-                # Process Latitude Input
-                context.user_data['latitude'] = float(update.message.text)
-                logger.info(f"Received Latitude: {context.user_data['latitude']}")  # Log latitude
-                
-                # Fetch location details after getting both coordinates
-                await fetch_location_details(update, context.user_data['longitude'], context.user_data['latitude'])
+            context.user_data['longitude'] = float(update.message.text)
+            logger.info(f"Received Longitude: {context.user_data['longitude']}")  # Log longitude
+            
+            # Fetch location details after getting both coordinates
+            await fetch_location_details(update, context.user_data['longitude'], context.user_data['latitude'])
 
-                # Resetting state after fetching location details
-                context.user_data['state'] = None  # Clear state after use
-                del context.user_data['longitude']
-                del context.user_data['latitude']
-                
+            # Resetting state after fetching location details
+            context.user_data['state'] = None  # Clear state after use
+            del context.user_data['latitude']
+            del context.user_data['longitude']
+            
         else:
-            await update.message.reply_text("Please enter the longitude first.")
+            await update.message.reply_text("Please enter the latitude first.")
             
     except ValueError:
         await update.message.reply_text("Invalid input. Please enter a valid number.")
