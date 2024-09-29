@@ -1,302 +1,151 @@
-
-
 import logging
+from typing import Union, TypedDict
 import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes, CallbackQueryHandler
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+    CallbackContext,
+    CallbackQueryHandler
+)
 
-# Enable logging
+# Set up logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Your bot token from BotFather
-TOKEN = "Meow Meow Meoww"
+# Define data structures for API responses
+class LocationResponse(TypedDict):
+    village: str
+    district: str
+    state: str
 
-# Define states for conversation
-ENTER_LONGITUDE, ENTER_LATITUDE = range(2)
+class ApiError(TypedDict):
+    error: Union[str, requests.exceptions.RequestException]
 
-# Start Command: Initiates conversation and shows buttons
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Initialize the bot
+bot = Bot(token="7572982062:AAE9S_rrNyntTOtq0piXPez7JoFodjsis8Q")
+
+# Command: Start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a welcome message when the command /start is issued."""
+    user_name = update.message.chat.first_name
+    welcome_message = (
+        f"Hi {user_name}, Welcome to the Location Bot! "
+        "You can use this bot to get location details based on coordinates or by sharing your location."
+    )
+    await bot.send_message(chat_id=update.effective_chat.id, text=welcome_message)
+    await show_location_options(update, context)
+
+# Command: Show location options (manual or share location)
+async def show_location_options(update: Update, context: CallbackContext):
     keyboard = [
-        [InlineKeyboardButton("User Input", callback_data='user_input')],
-        [InlineKeyboardButton("Share Location", callback_data='share_location')]
+        [InlineKeyboardButton("Enter Coordinates", callback_data='manual_input')],
+        [InlineKeyboardButton("Share My Location", callback_data='share_location')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Welcome! Please choose an option:", reply_markup=reply_markup)
 
-# Callback for button presses
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await bot.send_message(chat_id=update.effective_chat.id, text="How would you like to provide your location?", reply_markup=reply_markup)
+
+# Callback: Handle manual or share location input
+async def location_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()  # Acknowledge the callback
 
-    if query.data == 'user_input':
-        # Ask for longitude
-        await query.edit_message_text("Please enter your Longitude:")
-        return ENTER_LONGITUDE
-    
+    if query.data == 'manual_input':
+        await query.edit_message_text("Please enter your longitude (as a number):")
+        context.user_data['state'] = 'waiting_for_coordinates'
     elif query.data == 'share_location':
-        # Provide a button to share the user's location
-        location_button = [[KeyboardButton("Share My Location", request_location=True)]]
-        reply_markup = ReplyKeyboardMarkup(location_button, one_time_keyboard=True)
-        await query.edit_message_text("Please share your location using the button below:")
-        await update.effective_chat.send_message("Click the button to share your location:", reply_markup=reply_markup)
-        return ConversationHandler.END  # End the conversation
+        await query.edit_message_text("Please share your location using the Telegram location-sharing feature.")
 
-# Receive Longitude: Store it and ask for Latitude
-async def receive_longitude(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['longitude'] = update.message.text  # Store longitude
-    await update.message.reply_text("Thank you! Now, please enter your Latitude:")
-    return ENTER_LATITUDE
-
-# Receive Latitude: Send the message about the location
-async def receive_latitude(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['latitude'] = update.message.text  # Store latitude
+# Function to receive coordinates and fetch location details
+async def receive_coordinates(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    state = context.user_data.get('state')
     
-    # Accessing the stored coordinates
-    longitude = context.user_data['longitude']
-    latitude = context.user_data['latitude']
-    
-    # Get the user's username
-    user_username = update.message.from_user.username or "Unknown User"
-
-    # Print the coordinates and username to the terminal
-    print(f"User: {user_username}, Longitude: {longitude}, Latitude: {latitude}")
-
-    # Send request to the API endpoint
-    api_url = f"https://adminhierarchy.indiaobservatory.org.in/API/getRegionDetailsByLatLon?lat={latitude}&lon={longitude}"
-    response = requests.get(api_url)
-
-    # Print the API response to the terminal
-    print("API Response:", response.json())
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        try:
-            data = response.json()  # Parse the JSON response
-
-            # Check if the structure is as expected
-            if "text" in data and isinstance(data["text"], list):
-                # Extracting the village, district, and state from the response
-                village = next((item["name"] for item in data["text"] if item["type"] == "Village"), "Unknown Village")
-                district = next((item["name"] for item in data["text"] if item["type"] == "District"), "Unknown District")
-                state = next((item["name"] for item in data["text"] if item["type"] == "State"), "Unknown State")
-                
-                response_message = f"The village is {village},\nThe district is {district},\nThe state is {state}."
+    try:
+        if state == 'waiting_for_coordinates':
+            # Process Longitude Input
+            if 'longitude' not in context.user_data:
+                context.user_data['longitude'] = float(update.message.text)
+                logger.info(f"Received Longitude: {context.user_data['longitude']}")  # Log longitude
+                await update.message.reply_text("Thank you! Now, please enter your latitude (as a number):")
             else:
-                response_message = "Unexpected data format received from the API."
+                # Process Latitude Input
+                context.user_data['latitude'] = float(update.message.text)
+                logger.info(f"Received Latitude: {context.user_data['latitude']}")  # Log latitude
+                
+                # Fetch location details after getting both coordinates
+                await fetch_location_details(update, context.user_data['longitude'], context.user_data['latitude'])
 
-        except Exception as e:
-            logger.error(f"Error parsing response: {e}")
-            response_message = "Failed to fetch location details due to an error."
+                # Resetting state after fetching location details
+                context.user_data['state'] = None  # Clear state after use
+                del context.user_data['longitude']
+                del context.user_data['latitude']
+                
+        else:
+            await update.message.reply_text("Please enter the longitude first.")
+            
+    except ValueError:
+        await update.message.reply_text("Invalid input. Please enter a valid number.")
 
-    else:
-        response_message = "Failed to fetch location details. Please try again later."
+# Fetch location details from API using longitude and latitude
+async def fetch_location_details(update: Update, longitude: float, latitude: float) -> None:
+    try:
+        api_url = f"https://adminhierarchy.indiaobservatory.org.in/API/getRegionDetailsByLatLon?lat={latitude}&lon={longitude}"
+        response = requests.get(api_url)
+        logger.info(f"API Response Status Code: {response.status_code}")
 
-    await update.message.reply_text("Thank you for providing the coordinates!")
-    await update.message.reply_text(response_message)
+        if response.status_code == 200:
+            data = response.json()
 
-    return ConversationHandler.END
+            # Ensure that data is in the correct format
+            if isinstance(data, dict) and "text" in data:
+                village = next((item["name"] for item in data["text"] if isinstance(item, dict) and item.get("type") == "Village"), "Unknown Village")
+                district = next((item["name"] for item in data["text"] if isinstance(item, dict) and item.get("type") == "District"), "Unknown District")
+                state = next((item["name"] for item in data["text"] if isinstance(item, dict) and item.get("type") == "State"), "Unknown State")
 
-# Handle the location sharing
-async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Get the user's location
+                response_message = f"Village: {village}\nDistrict: {district}\nState: {state}"
+
+                # Send the location details back to the user
+                await update.message.reply_text(response_message)
+            else:
+                await update.message.reply_text("Unexpected data format received.")
+        else:
+            await update.message.reply_text("Failed to fetch location details. Please try again.")
+
+    except requests.exceptions.RequestException as e:
+        await update.message.reply_text(f"An error occurred: {e}")
+        logger.error(f"API request error: {e}")
+
+# Handle shared location from the user
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_location = update.message.location
     latitude = user_location.latitude
     longitude = user_location.longitude
 
-    # Get the user's username
-    user_username = update.message.from_user.username or "Unknown User"
+    logger.info(f"Received location: Longitude: {longitude}, Latitude: {latitude}")
+    await fetch_location_details(update, longitude, latitude)
 
-    # Print the coordinates and username to the terminal
-    print(f"User: {user_username}, Longitude: {longitude}, Latitude: {latitude}")
+# Main function to set up the bot
+def main() -> None:
+    application = ApplicationBuilder().bot(bot).build()
 
-    # Send request to the API endpoint
-    api_url = f"https://adminhierarchy.indiaobservatory.org.in/API/getRegionDetailsByLatLon?lat={latitude}&lon={longitude}"
-    response = requests.get(api_url)
+    # Add handlers for commands and location handling
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(location_callback, pattern='manual_input|share_location'))
 
-    # Print the API response to the terminal
-    print("API Response:", response.json())
+    # MessageHandler for receiving coordinates
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_coordinates))  # For both coordinates
 
-    # Check if the request was successful
-    if response.status_code == 200:
-        try:
-            data = response.json()  # Parse the JSON response
-
-            # Check if the structure is as expected
-            if "text" in data and isinstance(data["text"], list):
-                # Extracting the village, district, and state from the response
-                village = next((item["name"] for item in data["text"] if item["type"] == "Village"), "Unknown Village")
-                district = next((item["name"] for item in data["text"] if item["type"] == "District"), "Unknown District")
-                state = next((item["name"] for item in data["text"] if item["type"] == "State"), "Unknown State")
-                
-                response_message = f"The village is {village},\nThe district is {district},\nThe state is {state}."
-            else:
-                response_message = "Unexpected data format received from the API."
-
-        except Exception as e:
-            logger.error(f"Error parsing response: {e}")
-            response_message = "Failed to fetch location details due to an error."
-
-    else:
-        response_message = "Failed to fetch location details. Please try again later."
-
-    await update.message.reply_text(response_message)
-
-# End the conversation
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Operation cancelled.")
-    return ConversationHandler.END
-
-# Main function to run the bot
-if __name__ == '__main__':
-    # Create the Application and pass it your bot's token.
-    application = ApplicationBuilder().token(TOKEN).build()
-
-    # Conversation Handler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            ENTER_LONGITUDE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_longitude)],
-            ENTER_LATITUDE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_latitude)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
-
-    # Add handlers
-    application.add_handler(conv_handler)
-    application.add_handler(CallbackQueryHandler(button_callback))
+    # MessageHandler for receiving location sharing
     application.add_handler(MessageHandler(filters.LOCATION, handle_location))
 
     # Run the bot
     application.run_polling()
 
-
-import logging
-import requests
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackQueryHandler, ContextTypes
-
-# Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Define states for the conversation handler
-ENTER_LONGITUDE, ENTER_LATITUDE = range(2)
-
-# Start command: shows the menu
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("User Input", callback_data='user_input')],
-        [InlineKeyboardButton("Share Location", callback_data='share_location')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text('Please choose an option:', reply_markup=reply_markup)
-
-# Button callback handler for the menu
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()  # Acknowledge the callback
-
-    if query.data == 'user_input':
-        await query.edit_message_text("Please enter your Longitude:")
-        return ENTER_LONGITUDE  # Move to asking for longitude
-
-    elif query.data == 'share_location':
-        location_button = [[KeyboardButton("Share My Location", request_location=True)]]
-        reply_markup = ReplyKeyboardMarkup(location_button, one_time_keyboard=True)
-        await query.edit_message_text("Please share your location using the button below:")
-        await update.effective_chat.send_message("Click the button to share your location:", reply_markup=reply_markup)
-        return ConversationHandler.END  # No further state needed for location sharing
-
-# Receive longitude input
-async def receive_longitude(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['longitude'] = update.message.text  # Store longitude
-    await update.message.reply_text("Thank you! Now, please enter your Latitude:")
-    return ENTER_LATITUDE  # Move to asking for latitude
-
-# Receive latitude input
-async def receive_latitude(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['latitude'] = update.message.text  # Store latitude
-
-    longitude = context.user_data['longitude']
-    latitude = context.user_data['latitude']
-    
-    # Fetch location details via API
-    api_url = f"https://adminhierarchy.indiaobservatory.org.in/API/getRegionDetailsByLatLon?lat={latitude}&lon={longitude}"
-    response = requests.get(api_url)
-
-    if response.status_code == 200:
-        data = response.json()
-        village = next((item["name"] for item in data["text"] if item["type"] == "Village"), "Unknown Village")
-        district = next((item["name"] for item in data["text"] if item["type"] == "District"), "Unknown District")
-        state = next((item["name"] for item in data["text"] if item["type"] == "State"), "Unknown State")
-        
-        response_message = f"The village is {village},\nThe district is {district},\nThe state is {state}."
-    else:
-        response_message = "Failed to fetch location details. Please try again later."
-
-    await update.message.reply_text(response_message)
-    return ConversationHandler.END  # End conversation after receiving coordinates
-
-# Location handler: handle shared location from the user
-async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_location = update.message.location
-    latitude = user_location.latitude
-    longitude = user_location.longitude
-
-    # Fetch location details via API
-    api_url = f"https://adminhierarchy.indiaobservatory.org.in/API/getRegionDetailsByLatLon?lat={latitude}&lon={longitude}"
-    response = requests.get(api_url)
-
-    if response.status_code == 200:
-        data = response.json()
-        village = next((item["name"] for item in data["text"] if item["type"] == "Village"), "Unknown Village")
-        district = next((item["name"] for item in data["text"] if item["type"] == "District"), "Unknown District")
-        state = next((item["name"] for item in data["text"] if item["type"] == "State"), "Unknown State")
-        
-        response_message = f"The village is {village},\nThe district is {district},\nThe state is {state}."
-    else:
-        response_message = "Failed to fetch location details. Please try again later."
-
-    await update.message.reply_text(response_message)
-
-# Cancel command handler
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Operation cancelled.")
-    return ConversationHandler.END
-
-# Error handler
-def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.warning(f"Update {update} caused error {context.error}")
-
-# Main function to set up the bot
-def main():
-    # Create the application instance
-    application = Application.builder().token("YOUR_BOT_TOKEN_HERE").build()  # Replace with your actual bot token
-
-    # Define the conversation handler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            ENTER_LONGITUDE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_longitude)],
-            ENTER_LATITUDE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_latitude)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-    )
-
-    # Add handlers
-    application.add_handler(conv_handler)
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.LOCATION, location_handler))  # Handle location sharing
-
-    # Log errors
-    application.add_error_handler(error)
-
-    # Start the bot
-    application.run_polling()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
